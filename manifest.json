@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "Claude Chat Exporter",
+  "version": "1.0",
+  "description": "Export Claude chat conversations to markdown",
+  "permissions": [
+    "activeTab",
+    "downloads",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://claude.ai/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://claude.ai/*"],
+      "js": ["content/content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "Export Claude Chat"
+  },
+  "background": {
+    "service_worker": "background/background.js"
+  }
+}
