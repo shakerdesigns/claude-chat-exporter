@@ -5,7 +5,7 @@ Export your Claude.ai conversations to markdown files with one click. Includes a
 ## Features
 
 - 📝 Export entire Claude chat conversations to markdown
-- 🎨 Includes canvas/artifact content and code blocks
+- 🎨 Includes text-based canvas/artifact content only (NOT HTML)
 - 🏷️ Uses your custom chat names as filenames
 - ⚡ One-click export from any Claude.ai chat
 - 🔒 Completely local - no data leaves your browser
