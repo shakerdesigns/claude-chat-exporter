@@ -156,71 +156,125 @@ function extractMessageContent(container) {
 function extractCanvasContent(container) {
   let canvasMarkdown = '';
   
-  // Look for Claude's canvas/artifact containers
-  const canvasSelectors = [
-    '[data-testid="artifact"]',
-    '[data-testid="canvas"]',
-    '.artifact-container',
-    '[class*="artifact"]',
-    '[class*="canvas"]',
-    'iframe[src*="artifacts"]'
-  ];
+  // Look for Claude's artifact containers - same as working version
+  const artifactContainers = container.querySelectorAll(
+    '#markdown-artifact, [id*="artifact"], .font-claude-message, [class*="artifact"]'
+  );
   
-  canvasSelectors.forEach(selector => {
-    const canvases = container.querySelectorAll(selector);
-    canvases.forEach((canvas, index) => {
-      // Try to get artifact title or type
-      let title = '';
-      const titleElement = canvas.querySelector('[data-testid="artifact-title"], .artifact-title, h3, h4');
-      if (titleElement) {
-        title = titleElement.textContent.trim();
-      }
-      
-      // Try to get artifact content
-      let content = '';
-      
-      // Check if it's an iframe (common for artifacts)
-      if (canvas.tagName === 'IFRAME') {
-        try {
-          const iframeDoc = canvas.contentDocument || canvas.contentWindow.document;
-          if (iframeDoc) {
-            content = iframeDoc.body.innerText || iframeDoc.body.textContent || '[Canvas content - iframe not accessible]';
-          } else {
-            content = '[Canvas content - iframe not accessible]';
-          }
-        } catch (e) {
-          content = '[Canvas content - iframe not accessible due to security restrictions]';
-        }
-      } else {
-        // Try to extract code or text content
-        const codeElement = canvas.querySelector('pre code, code, .hljs');
-        if (codeElement) {
-          const language = codeElement.className.match(/language-(\w+)/)?.[1] || '';
-          content = `\`\`\`${language}\n${codeElement.textContent}\n\`\`\``;
-        } else {
-          content = canvas.textContent.trim() || '[Canvas content not extractable]';
-        }
-      }
-      
-      if (content) {
-        canvasMarkdown += `\n### 🎨 Canvas${title ? `: ${title}` : ` ${index + 1}`}\n\n${content}\n\n`;
-      }
-    });
+  artifactContainers.forEach((artifactContainer, index) => {
+    // Skip HTML artifacts that contain iframes - THIS IS THE ONLY NEW ADDITION
+    if (artifactContainer.querySelector('iframe')) {
+      console.log('Skipping HTML artifact with iframe');
+      return;
+    }
+    
+    // Get the artifact title from h1 or other heading elements
+    let title = '';
+    const titleElement = artifactContainer.querySelector('h1, h2, h3, h4, .text-2xl, .text-xl, .text-lg');
+    if (titleElement && titleElement.textContent.trim()) {
+      title = titleElement.textContent.trim();
+    }
+    
+    // Get the full content of the artifact
+    let content = '';
+    
+    // Clone to avoid modifying original
+    const clone = artifactContainer.cloneNode(true);
+    
+    // Remove any UI controls/buttons that aren't part of the content
+    const controlElements = clone.querySelectorAll('button, [role="button"], .sr-only, [aria-hidden="true"]');
+    controlElements.forEach(el => el.remove());
+    
+    // Convert the HTML content to markdown
+    content = convertHtmlToMarkdown(clone);
+    
+    if (content && content.trim().length > 50) { // Only include substantial content
+      const artifactTitle = title || `Artifact ${index + 1}`;
+      canvasMarkdown += `\n### 🎨 ${artifactTitle}\n\n${content}\n\n`;
+    }
   });
   
-  // Also look for code blocks that might not be in canvas containers
-  const standaloneCodeBlocks = container.querySelectorAll('pre:not([class*="artifact"]) code');
+  // Also look for any standalone code blocks not in artifacts
+  const standaloneCodeBlocks = container.querySelectorAll('pre code');
   standaloneCodeBlocks.forEach((block, index) => {
-    if (!block.closest('[data-testid="artifact"]') && !block.closest('.artifact-container')) {
+    // Skip if already inside an artifact
+    if (!block.closest('#markdown-artifact, [id*="artifact"]')) {
       const language = block.className.match(/language-(\w+)/)?.[1] || '';
-      const code = block.textContent;
-      if (code.trim()) {
+      const code = block.textContent.trim();
+      if (code && code.length > 10) {
         canvasMarkdown += `\n### 💻 Code Block ${index + 1}\n\n\`\`\`${language}\n${code}\n\`\`\`\n\n`;
       }
     }
   });
   
   return canvasMarkdown;
+}
+
+function convertHtmlToMarkdown(element) {
+  // Get the innerHTML and convert to markdown
+  let html = element.innerHTML;
+  
+  // Convert HTML elements to markdown
+  html = html
+    // Headers
+    .replace(/<h1[^>]*>(.*?)<\/h1>/gi, '# $1\n\n')
+    .replace(/<h2[^>]*>(.*?)<\/h2>/gi, '## $1\n\n')
+    .replace(/<h3[^>]*>(.*?)<\/h3>/gi, '### $1\n\n')
+    .replace(/<h4[^>]*>(.*?)<\/h4>/gi, '#### $1\n\n')
+    .replace(/<h5[^>]*>(.*?)<\/h5>/gi, '##### $1\n\n')
+    .replace(/<h6[^>]*>(.*?)<\/h6>/gi, '###### $1\n\n')
+    
+    // Paragraphs
+    .replace(/<p[^>]*>(.*?)<\/p>/gi, '$1\n\n')
+    
+    // Line breaks
+    .replace(/<br\s*\/?>/gi, '\n')
+    
+    // Strong/Bold
+    .replace(/<strong[^>]*>(.*?)<\/strong>/gi, '**$1**')
+    .replace(/<b[^>]*>(.*?)<\/b>/gi, '**$1**')
+    
+    // Emphasis/Italic
+    .replace(/<em[^>]*>(.*?)<\/em>/gi, '*$1*')
+    .replace(/<i[^>]*>(.*?)<\/i>/gi, '*$1*')
+    
+    // Task lists (checkboxes) - handle these before regular lists
+    .replace(/<input[^>]*type="checkbox"[^>]*checked[^>]*>/gi, '- [x] ')
+    .replace(/<input[^>]*type="checkbox"[^>]*>/gi, '- [ ] ')
+    
+    // Lists
+    .replace(/<li[^>]*>(.*?)<\/li>/gi, '- $1\n')
+    .replace(/<ul[^>]*>(.*?)<\/ul>/gi, '$1\n')
+    .replace(/<ol[^>]*>(.*?)<\/ol>/gi, '$1\n')
+    
+    // Links
+    .replace(/<a[^>]*href="([^"]*)"[^>]*>(.*?)<\/a>/gi, '[$2]($1)')
+    
+    // Code blocks (preserve these)
+    .replace(/<pre[^>]*><code[^>]*>(.*?)<\/code><\/pre>/gi, '```\n$1\n```\n')
+    
+    // Inline code
+    .replace(/<code[^>]*>(.*?)<\/code>/gi, '`$1`')
+    
+    // Horizontal rules
+    .replace(/<hr[^>]*>/gi, '\n---\n')
+    
+    // Remove all other HTML tags
+    .replace(/<[^>]*>/g, '')
+    
+    // Clean up HTML entities
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#x27;/g, "'")
+    
+    // Clean up multiple newlines
+    .replace(/\n\s*\n\s*\n/g, '\n\n')
+    .trim();
+  
+  return html;
 }
 
 function generateFilename() {
