@@ -20,16 +20,54 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 });
 
 function extractChatMessages() {
-  // Target Claude's chat message containers
-  const messageContainers = document.querySelectorAll('[data-testid^="conversation-turn"]');
+  console.log('Starting chat extraction...');
+  console.log('Current URL:', window.location.href);
+  
+  // Debug: Let's see what elements actually exist
+  console.log('Checking for various selectors...');
+  console.log('conversation-turn:', document.querySelectorAll('[data-testid^="conversation-turn"]').length);
+  console.log('data-testid with turn:', document.querySelectorAll('[data-testid*="turn"]').length);
+  console.log('font-claude-message:', document.querySelectorAll('.font-claude-message').length);
+  console.log('Any divs with font-claude:', document.querySelectorAll('[class*="font-claude"]').length);
+  console.log('Prose class:', document.querySelectorAll('.prose').length);
+  console.log('Message classes:', document.querySelectorAll('[class*="message"]').length);
+  
+  // Let's try more modern selectors that might work with current Claude
+  const possibleSelectors = [
+    '[data-testid^="conversation-turn"]',
+    '[data-testid*="turn"]',
+    '[data-testid*="message"]',
+    '[data-testid*="chat"]',
+    '.font-claude-message',
+    '[class*="font-claude"]',
+    '.prose',
+    '[class*="message"]',
+    '[role="article"]',
+    'article',
+    '[class*="conversation"]',
+    '[class*="chat"]'
+  ];
+  
+  let messageContainers = [];
+  
+  for (const selector of possibleSelectors) {
+    const elements = document.querySelectorAll(selector);
+    console.log(`${selector}: ${elements.length} elements`);
+    if (elements.length > 0) {
+      messageContainers = elements;
+      console.log(`Using selector: ${selector}`);
+      break;
+    }
+  }
   
   if (messageContainers.length === 0) {
-    // Fallback: try alternative selectors
-    const alternativeContainers = document.querySelectorAll('.font-claude-message, .prose, [class*="message"]');
-    if (alternativeContainers.length === 0) {
-      throw new Error('No chat messages found. Make sure you are on a Claude chat page.');
-    }
-    return extractFromAlternativeContainers(alternativeContainers);
+    console.log('No chat containers found with any selector');
+    console.log('Sample of page structure:');
+    console.log('Body classes:', document.body.className);
+    console.log('Main elements:', document.querySelectorAll('main').length);
+    console.log('All divs:', document.querySelectorAll('div').length);
+    
+    throw new Error('No chat messages found. Make sure you are on a Claude chat page.');
   }
 
   let markdown = `# Claude Chat Export\n\n*Exported on ${new Date().toLocaleString()}*\n\n---\n\n`;
@@ -61,6 +99,7 @@ function extractChatMessages() {
     }
   });
   
+  console.log('Chat extraction completed successfully');
   return markdown;
 }
 
@@ -156,18 +195,12 @@ function extractMessageContent(container) {
 function extractCanvasContent(container) {
   let canvasMarkdown = '';
   
-  // Look for Claude's artifact containers - same as working version
+  // Look for Claude's artifact containers - updated for actual DOM structure
   const artifactContainers = container.querySelectorAll(
     '#markdown-artifact, [id*="artifact"], .font-claude-message, [class*="artifact"]'
   );
   
   artifactContainers.forEach((artifactContainer, index) => {
-    // Skip HTML artifacts that contain iframes - THIS IS THE ONLY NEW ADDITION
-    if (artifactContainer.querySelector('iframe')) {
-      console.log('Skipping HTML artifact with iframe');
-      return;
-    }
-    
     // Get the artifact title from h1 or other heading elements
     let title = '';
     const titleElement = artifactContainer.querySelector('h1, h2, h3, h4, .text-2xl, .text-xl, .text-lg');
@@ -214,6 +247,9 @@ function convertHtmlToMarkdown(element) {
   // Get the innerHTML and convert to markdown
   let html = element.innerHTML;
   
+  // Simple fix for the specific HTML fragment
+  html = html.replace(/_\*\]:min-w-0 !gap-3\.5">/g, '');
+  
   // Convert HTML elements to markdown
   html = html
     // Headers
@@ -237,10 +273,6 @@ function convertHtmlToMarkdown(element) {
     // Emphasis/Italic
     .replace(/<em[^>]*>(.*?)<\/em>/gi, '*$1*')
     .replace(/<i[^>]*>(.*?)<\/i>/gi, '*$1*')
-    
-    // Task lists (checkboxes) - handle these before regular lists
-    .replace(/<input[^>]*type="checkbox"[^>]*checked[^>]*>/gi, '- [x] ')
-    .replace(/<input[^>]*type="checkbox"[^>]*>/gi, '- [ ] ')
     
     // Lists
     .replace(/<li[^>]*>(.*?)<\/li>/gi, '- $1\n')
